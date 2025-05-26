@@ -1,112 +1,152 @@
-# app.py
-import streamlit as st
+import dash
+from dash import dcc, html, dash_table, Input, Output, State
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.express as px
 from wordcloud import WordCloud
-from collections import Counter
+import base64
+from io import BytesIO
 import nltk
 from nltk.corpus import stopwords
+from collections import Counter
 from textblob import TextBlob
-import plotly.express as px
-from gensim.summarization import summarize
 
-# Descargar stopwords la primera vez
 nltk.download('stopwords')
+STOPWORDS = set(stopwords.words('spanish'))
 
-st.title("Análisis de Opiniones de Clientes")
+# Función para limpiar texto
+def clean_text(text):
+    words = [word.lower() for word in str(text).split() if word.isalpha()]
+    words = [word for word in words if word not in STOPWORDS]
+    return ' '.join(words)
 
-# 1. Subida de archivo CSV
-st.header("1. Sube tu archivo CSV")
-st.write("El archivo debe tener una columna llamada 'opinion' con al menos 20 comentarios.")
-uploaded_file = st.file_uploader("Selecciona tu archivo CSV", type="csv")
-
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    if 'opinion' not in df.columns:
-        st.error("El archivo debe tener una columna llamada 'opinion'.")
-    elif len(df) < 20:
-        st.error("El archivo debe tener al menos 20 opiniones.")
+# Función para análisis de sentimiento
+def get_sentiment(text):
+    analysis = TextBlob(text)
+    if analysis.sentiment.polarity > 0.1:
+        return 'Positivo'
+    elif analysis.sentiment.polarity < -0.1:
+        return 'Negativo'
     else:
-        st.success("Archivo cargado correctamente.")
-        st.dataframe(df.head())
+        return 'Neutro'
 
-        # 2. Limpieza de texto y eliminación de stopwords
-        st.header("2. Procesamiento de texto")
-        stop_words = set(stopwords.words('spanish'))
-        def clean_text(text):
-            words = [word.lower() for word in str(text).split() if word.isalpha()]
-            words = [word for word in words if word not in stop_words]
-            return ' '.join(words)
-        df['cleaned'] = df['opinion'].apply(clean_text)
+# Función para generar nube de palabras como imagen base64
+def generate_wordcloud(text):
+    wc = WordCloud(width=800, height=400, background_color='white').generate(text)
+    buf = BytesIO()
+    wc.to_image().save(buf, format='PNG')
+    data = base64.b64encode(buf.getvalue()).decode()
+    return f"data:image/png;base64,{data}"
 
-        # 3. Visualizaciones
-        st.header("3. Visualizaciones de palabras")
-        all_text = ' '.join(df['cleaned'])
-        # Nube de palabras
-        wordcloud = WordCloud(width=800, height=400, background_color='white').generate(all_text)
-        fig, ax = plt.subplots(figsize=(10,5))
-        ax.imshow(wordcloud, interpolation='bilinear')
-        ax.axis('off')
-        st.subheader("Nube de palabras")
-        st.pyplot(fig)
+# App Dash
+app = dash.Dash(__name__)
+server = app.server  # Para gunicorn
 
-        # Gráfico de barras: 10 palabras más frecuentes
-        words = all_text.split()
-        common_words = Counter(words).most_common(10)
-        words_plot, counts_plot = zip(*common_words)
-        fig2, ax2 = plt.subplots()
-        ax2.bar(words_plot, counts_plot, color='skyblue')
-        plt.xticks(rotation=45)
-        st.subheader("Top 10 palabras más frecuentes")
-        st.pyplot(fig2)
+app.layout = html.Div([
+    html.H1("Análisis de Opiniones de Clientes"),
+    dcc.Upload(
+        id='upload-data',
+        children=html.Button('Sube tu archivo CSV'),
+        multiple=False
+    ),
+    html.Div(id='output-data-upload'),
+    html.Hr(),
+    html.Div(id='extra-analysis')
+])
 
-        # 4. Clasificación de sentimientos
-        st.header("4. Análisis de sentimientos")
-        def get_sentiment(text):
-            analysis = TextBlob(text)
-            if analysis.sentiment.polarity > 0.1:
-                return 'Positivo'
-            elif analysis.sentiment.polarity < -0.1:
-                return 'Negativo'
-            else:
-                return 'Neutro'
-        df['sentimiento'] = df['opinion'].apply(get_sentiment)
-        st.dataframe(df[['opinion', 'sentimiento']])
+def parse_contents(contents, filename):
+    content_type, content_string = contents.split(',')
+    decoded = base64.b64decode(content_string)
+    df = pd.read_csv(BytesIO(decoded))
+    if 'opinion' not in df.columns or len(df) < 20:
+        return html.Div([
+            html.H5('El archivo debe tener una columna llamada "opinion" y al menos 20 filas.')
+        ])
+    df['cleaned'] = df['opinion'].apply(clean_text)
 
-        # Gráfico de porcentaje por clase
-        st.subheader("Distribución de sentimientos")
-        sentiment_counts = df['sentimiento'].value_counts()
-        fig3 = px.pie(
-            names=sentiment_counts.index,
-            values=sentiment_counts.values,
-            title="Porcentaje de opiniones por sentimiento"
-        )
-        st.plotly_chart(fig3)
+    # Nube de palabras
+    all_text = ' '.join(df['cleaned'])
+    wc_img = generate_wordcloud(all_text)
 
-        # 5. Funcionalidad extra: Nuevo comentario
-        st.header("5. Analiza un comentario nuevo")
-        nuevo_comentario = st.text_area("Escribe un nuevo comentario aquí")
-        if st.button("Analizar comentario"):
-            if nuevo_comentario.strip() == "":
-                st.warning("Por favor escribe un comentario.")
-            else:
-                sentimiento_nuevo = get_sentiment(nuevo_comentario)
-                try:
-                    resumen_nuevo = summarize(nuevo_comentario, word_count=20)
-                    if not resumen_nuevo:
-                        resumen_nuevo = "Comentario muy corto para resumir."
-                except:
-                    resumen_nuevo = "Comentario muy corto para resumir."
-                st.write(f"**Sentimiento:** {sentimiento_nuevo}")
-                st.write(f"**Resumen:** {resumen_nuevo}")
+    # Top 10 palabras
+    words = all_text.split()
+    common_words = Counter(words).most_common(10)
+    words_plot, counts_plot = zip(*common_words) if common_words else ([], [])
+    fig_bar = px.bar(x=words_plot, y=counts_plot, labels={'x':'Palabra','y':'Frecuencia'}, title='Top 10 palabras más frecuentes')
 
-        # 6. Funcionalidad extra: Resumen de los 20 comentarios
-        st.header("6. Resumen de las opiniones cargadas")
-        if st.button("Mostrar resumen de todas las opiniones"):
-            try:
-                resumen_total = summarize(' '.join(df['opinion']), word_count=50)
-                if not resumen_total:
-                    resumen_total = "Opiniones muy cortas para resumir."
-            except:
-                resumen_total = "Opiniones muy cortas para resumir."
-            st.write(resumen_total)
+    # Sentimiento
+    df['sentimiento'] = df['opinion'].apply(get_sentiment)
+    fig_pie = px.pie(df, names='sentimiento', title='Porcentaje de opiniones por sentimiento')
+
+    # Tabla de opiniones y sentimiento
+    table = dash_table.DataTable(
+        columns=[{"name": i, "id": i} for i in ['opinion', 'sentimiento']],
+        data=df[['opinion', 'sentimiento']].to_dict('records'),
+        style_table={'overflowX': 'auto'},
+        page_size=10
+    )
+
+    return html.Div([
+        html.H3('Nube de palabras'),
+        html.Img(src=wc_img, style={'width':'80%'}),
+        html.H3('Top 10 palabras'),
+        dcc.Graph(figure=fig_bar),
+        html.H3('Opiniones y sentimiento'),
+        table,
+        html.H3('Distribución de sentimientos'),
+        dcc.Graph(figure=fig_pie),
+        html.Hr(),
+        html.H4('Análisis extra'),
+        html.Div([
+            dcc.Textarea(id='new-comment', placeholder='Escribe un comentario nuevo...', style={'width':'100%'}),
+            html.Button('Analizar comentario', id='analyze-btn', n_clicks=0),
+            html.Div(id='analysis-result'),
+        ]),
+        html.Br(),
+        html.Button('Resumen de todas las opiniones', id='summary-btn', n_clicks=0),
+        html.Div(id='summary-result'),
+        dcc.Store(id='stored-data', data=df.to_dict('records'))
+    ])
+
+@app.callback(
+    Output('output-data-upload', 'children'),
+    Input('upload-data', 'contents'),
+    State('upload-data', 'filename')
+)
+def update_output(contents, filename):
+    if contents is not None:
+        return parse_contents(contents, filename)
+    return html.Div()
+
+@app.callback(
+    Output('analysis-result', 'children'),
+    Input('analyze-btn', 'n_clicks'),
+    State('new-comment', 'value')
+)
+def analyze_new_comment(n_clicks, comment):
+    if n_clicks > 0 and comment:
+        sentiment = get_sentiment(comment)
+        resumen = comment if len(comment.split()) <= 20 else " ".join(comment.split()[:20]) + "..."
+        return html.Div([
+            html.P(f"Sentimiento: {sentiment}"),
+            html.P(f"Resumen: {resumen}")
+        ])
+    return ""
+
+@app.callback(
+    Output('summary-result', 'children'),
+    Input('summary-btn', 'n_clicks'),
+    State('stored-data', 'data')
+)
+def summarize_all(n_clicks, data):
+    if n_clicks > 0 and data:
+        df = pd.DataFrame(data)
+        all_text = " ".join(df['opinion'])
+        resumen = all_text if len(all_text.split()) <= 60 else " ".join(all_text.split()[:60]) + "..."
+        return html.Div([
+            html.P("Resumen de opiniones:"),
+            html.P(resumen)
+        ])
+    return ""
+
+if __name__ == '__main__':
+    app.run_server(debug=False)
