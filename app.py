@@ -19,7 +19,13 @@ def clean_text(text):
     return ' '.join(words)
 
 def get_sentiment(text):
-    analysis = TextBlob(text)
+    try:
+        # Traducimos al inglés antes de analizar el sentimiento
+        translated = TextBlob(text).translate(to='en')
+        analysis = TextBlob(str(translated))
+    except Exception:
+        # Si falla la traducción, analiza el texto original
+        analysis = TextBlob(text)
     if analysis.sentiment.polarity > 0.1:
         return 'Positivo'
     elif analysis.sentiment.polarity < -0.1:
