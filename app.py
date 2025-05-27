@@ -8,10 +8,15 @@ from io import BytesIO
 import nltk
 from nltk.corpus import stopwords
 from collections import Counter
-from textblob import TextBlob
+
+# Importar Hugging Face pipeline
+from transformers import pipeline
 
 nltk.download('stopwords')
 STOPWORDS = set(stopwords.words('spanish'))
+
+# Cargar el modelo BETO para análisis de sentimiento en español
+classifier = pipeline("sentiment-analysis", model="finiteautomata/beto-sentiment-analysis")
 
 def clean_text(text):
     words = [word.lower() for word in str(text).split() if word.isalpha()]
@@ -20,17 +25,15 @@ def clean_text(text):
 
 def get_sentiment(text):
     try:
-        # Traducimos al inglés antes de analizar el sentimiento
-        translated = TextBlob(text).translate(to='en')
-        analysis = TextBlob(str(translated))
+        result = classifier(text)[0]
+        label = result['label']
+        if label == 'POS':
+            return 'Positivo'
+        elif label == 'NEG':
+            return 'Negativo'
+        else:
+            return 'Neutro'
     except Exception:
-        # Si falla la traducción, analiza el texto original
-        analysis = TextBlob(text)
-    if analysis.sentiment.polarity > 0.1:
-        return 'Positivo'
-    elif analysis.sentiment.polarity < -0.1:
-        return 'Negativo'
-    else:
         return 'Neutro'
 
 def generate_wordcloud(text):
@@ -75,7 +78,7 @@ def parse_contents(contents, filename):
     words_plot, counts_plot = zip(*common_words) if common_words else ([], [])
     fig_bar = px.bar(x=words_plot, y=counts_plot, labels={'x':'Palabra','y':'Frecuencia'}, title='Top 10 palabras más frecuentes')
 
-    # Sentimiento
+    # Sentimiento con BETO
     df['sentimiento'] = df['opinion'].apply(get_sentiment)
     fig_pie = px.pie(df, names='sentimiento', title='Porcentaje de opiniones por sentimiento')
 
