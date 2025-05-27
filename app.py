@@ -11,7 +11,7 @@ from collections import Counter
 from textblob import TextBlob
 
 nltk.download('stopwords')
-STOPWORDS = set(stopwords.words('spanish'))
+STOPWORDS = set(stopwords.words('english'))
 
 def clean_text(text):
     words = [word.lower() for word in str(text).split() if word.isalpha()]
