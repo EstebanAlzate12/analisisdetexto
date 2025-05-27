@@ -26,9 +26,9 @@ def get_sentiment(text):
     except Exception:
         # Si falla la traducción, analiza el texto original
         analysis = TextBlob(text)
-    if analysis.sentiment.polarity > 0.2:
+    if analysis.sentiment.polarity > 0.1:
         return 'Positivo'
-    elif analysis.sentiment.polarity < -0.2:
+    elif analysis.sentiment.polarity < -0.1:
         return 'Negativo'
     else:
         return 'Neutro'
