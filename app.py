@@ -13,13 +13,11 @@ from textblob import TextBlob
 nltk.download('stopwords')
 STOPWORDS = set(stopwords.words('spanish'))
 
-# Función para limpiar texto
 def clean_text(text):
     words = [word.lower() for word in str(text).split() if word.isalpha()]
     words = [word for word in words if word not in STOPWORDS]
     return ' '.join(words)
 
-# Función para análisis de sentimiento
 def get_sentiment(text):
     analysis = TextBlob(text)
     if analysis.sentiment.polarity > 0.1:
@@ -29,7 +27,6 @@ def get_sentiment(text):
     else:
         return 'Neutro'
 
-# Función para generar nube de palabras como imagen base64
 def generate_wordcloud(text):
     wc = WordCloud(width=800, height=400, background_color='white').generate(text)
     buf = BytesIO()
@@ -37,7 +34,6 @@ def generate_wordcloud(text):
     data = base64.b64encode(buf.getvalue()).decode()
     return f"data:image/png;base64,{data}"
 
-# App Dash
 app = dash.Dash(__name__)
 server = app.server  # Para gunicorn
 
@@ -149,4 +145,4 @@ def summarize_all(n_clicks, data):
     return ""
 
 if __name__ == '__main__':
-    app.run_server(debug=False)
+    app.run_server(debug=True)
